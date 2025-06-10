@@ -39,6 +39,26 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/artifacts/:id", async (req, res) => {
+      const { id } = req.params;
+      try {
+        const artifact = await artifactCollections.findOne({
+          _id: new ObjectId(id),
+        });
+        if (!artifact) {
+          return res.status(404).json({ message: "Artifact not found" });
+        }
+        res.json(artifact);
+      } catch (error) {
+        res.status(400).json({ message: "Invalid artifact ID" });
+      }
+    });
+
+    app.get("/all-artifacts", async (req, res) => {
+      const artifacts = await artifactCollections.find().toArray();
+      res.json(artifacts);
+    });
+
     app.post("/artifact/like", async (req, res) => {
       const { artifactId, userEmail } = req.body;
 
