@@ -67,7 +67,34 @@ async function run() {
           .status(400)
           .json({ message: "Email query parameter is required" });
       }
-      const artifacts = await artifactCollections.find({userEmail: email }).toArray();
+      const artifacts = await artifactCollections
+        .find({ userEmail: email })
+        .toArray();
+      res.json(artifacts);
+    });
+
+    app.get("/liked-artifacts", async (req, res) => {
+      const { email } = req.query;
+      if (!email) {
+        return res
+          .status(400)
+          .json({ message: "Email query parameter is required" });
+      }
+
+      // Get all liked artifactIds for this user
+      const likes = await likeCollections.find({ userEmail: email }).toArray();
+      const artifactIds = likes.map((like) => new ObjectId(like.artifactId));
+
+      // If no likes, return empty array
+      if (artifactIds.length === 0) {
+        return res.json([]);
+      }
+
+      // Get all artifacts with those IDs
+      const artifacts = await artifactCollections
+        .find({ _id: { $in: artifactIds } })
+        .toArray();
+
       res.json(artifacts);
     });
 
