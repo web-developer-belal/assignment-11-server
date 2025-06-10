@@ -39,7 +39,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/artifacts/:id", async (req, res) => {
+    app.get("/artifact/:id", async (req, res) => {
       const { id } = req.params;
       try {
         const artifact = await artifactCollections.findOne({
@@ -48,7 +48,7 @@ async function run() {
         if (!artifact) {
           return res.status(404).json({ message: "Artifact not found" });
         }
-        res.json(artifact);
+        res.send(artifact);
       } catch (error) {
         res.status(400).json({ message: "Invalid artifact ID" });
       }
@@ -62,6 +62,14 @@ async function run() {
     app.post("/artifact/like", async (req, res) => {
       const { artifactId, userEmail } = req.body;
 
+      // Convert artifactId to ObjectId
+      let artifactObjectId;
+      try {
+        artifactObjectId = new ObjectId(artifactId);
+      } catch (err) {
+        return res.status(400).json({ message: "Invalid artifactId" });
+      }
+
       // Check if like exists
       const existingLike = await likeCollections.findOne({
         artifactId,
@@ -72,7 +80,7 @@ async function run() {
         // Unlike: Remove like and decrement likeCount
         await likeCollections.deleteOne({ artifactId, userEmail });
         await artifactCollections.updateOne(
-          { _id: ObjectId(artifactId) },
+          { _id: artifactObjectId },
           { $inc: { likeCount: -1 } }
         );
         return res.send({ liked: false, message: "Unliked" });
@@ -80,7 +88,7 @@ async function run() {
         // Like: Add like and increment likeCount
         await likeCollections.insertOne({ artifactId, userEmail });
         await artifactCollections.updateOne(
-          { _id: ObjectId(artifactId) },
+          { _id: artifactObjectId },
           { $inc: { likeCount: 1 } }
         );
         return res.send({ liked: true, message: "Liked" });
