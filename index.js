@@ -55,44 +55,83 @@ async function run() {
       }
     });
 
+    // ALL ARTIFACTS
     app.get("/all-artifacts", async (req, res) => {
-      const artifacts = await artifactCollections.find().toArray();
-      res.json(artifacts);
-    });
+      const { search } = req.query;
+      let filter = {};
+      let sort = { likeCount: -1 };
+      let projection = {};
 
-    app.get("/my-artifacts", async (req, res) => {
-      const { email } = req.query;
-      if (!email) {
-        return res
-          .status(400)
-          .json({ message: "Email query parameter is required" });
+      if (search) {
+        filter = { $text: { $search: search } };
+        projection = { score: { $meta: "textScore" } };
+        sort = { score: { $meta: "textScore" }, likeCount: -1 };
       }
+
       const artifacts = await artifactCollections
-        .find({ userEmail: email })
+        .find(filter)
+        .project(projection)
+        .sort(sort)
         .toArray();
-      res.json(artifacts);
+
+      res.send(artifacts);
     });
 
-    app.get("/liked-artifacts", async (req, res) => {
-      const { email } = req.query;
+    // MY ARTIFACTS
+    app.get("/my-artifacts", async (req, res) => {
+      const { email, search } = req.query;
       if (!email) {
         return res
           .status(400)
           .json({ message: "Email query parameter is required" });
       }
 
-      // Get all liked artifactIds for this user
+      let filter = { userEmail: email };
+      let sort = { likeCount: -1 };
+      let projection = {};
+
+      if (search) {
+        filter.$text = { $search: search };
+        projection = { score: { $meta: "textScore" } };
+        sort = { score: { $meta: "textScore" }, likeCount: -1 };
+      }
+
+      const artifacts = await artifactCollections
+        .find(filter)
+        .project(projection)
+        .sort(sort)
+        .toArray();
+
+      res.send(artifacts);
+    });
+
+    // LIKED ARTIFACTS
+    app.get("/liked-artifacts", async (req, res) => {
+      const { email, search } = req.query;
+      if (!email) {
+        return res
+          .status(400)
+          .json({ message: "Email query parameter is required" });
+      }
+
       const likes = await likeCollections.find({ userEmail: email }).toArray();
       const artifactIds = likes.map((like) => new ObjectId(like.artifactId));
+      if (artifactIds.length === 0) return res.json([]);
 
-      // If no likes, return empty array
-      if (artifactIds.length === 0) {
-        return res.json([]);
+      let filter = { _id: { $in: artifactIds } };
+      let sort = { likeCount: -1 };
+      let projection = {};
+
+      if (search) {
+        filter.$text = { $search: search };
+        projection = { score: { $meta: "textScore" } };
+        sort = { score: { $meta: "textScore" }, likeCount: -1 };
       }
 
-      // Get all artifacts with those IDs
       const artifacts = await artifactCollections
-        .find({ _id: { $in: artifactIds } })
+        .find(filter)
+        .project(projection)
+        .sort(sort)
         .toArray();
 
       res.json(artifacts);
@@ -125,6 +164,40 @@ async function run() {
           { $inc: { likeCount: 1 } }
         );
         return res.send({ liked: true, message: "Liked" });
+      }
+    });
+
+    // Update artifact by ID
+    app.put("/artifact/:id", async (req, res) => {
+      const { id } = req.params;
+      const updateData = req.body;
+      try {
+        const result = await artifactCollections.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData }
+        );
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "Artifact not found" });
+        }
+        res.json({ message: "Artifact updated", result });
+      } catch (error) {
+        res.status(400).json({ message: "Invalid artifact ID" });
+      }
+    });
+
+    // Delete artifact by ID
+    app.delete("/artifact/:id", async (req, res) => {
+      const { id } = req.params;
+      try {
+        const result = await artifactCollections.deleteOne({
+          _id: new ObjectId(id),
+        });
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ message: "Artifact not found" });
+        }
+        res.json({ message: "Artifact deleted" });
+      } catch (error) {
+        res.status(400).json({ message: "Invalid artifact ID" });
       }
     });
 
