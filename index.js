@@ -1,7 +1,7 @@
-const express = require('express')
-const app = express()
+const express = require("express");
+const app = express();
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 
 const port = process.env.PORT || 3000;
@@ -21,9 +21,9 @@ const client = new MongoClient(uri, {
   },
 });
 
-app.get('/', (req, res) => {
-  res.send('Hello World!')
-})
+app.get("/", (req, res) => {
+  res.send("Hello World!");
+});
 
 async function run() {
   try {
@@ -31,12 +31,40 @@ async function run() {
     await client.connect();
 
     const artifactCollections = client.db("artifacts").collection("artifacts");
-
+    const likeCollections = client.db("artifacts").collection("likes");
 
     app.post("/artifacts", async (req, res) => {
       const artifact = req.body;
       const result = await artifactCollections.insertOne(artifact);
       res.send(result);
+    });
+
+    app.post("/artifact/like", async (req, res) => {
+      const { artifactId, userEmail } = req.body;
+
+      // Check if like exists
+      const existingLike = await likeCollections.findOne({
+        artifactId,
+        userEmail,
+      });
+
+      if (existingLike) {
+        // Unlike: Remove like and decrement likeCount
+        await likeCollections.deleteOne({ artifactId, userEmail });
+        await artifactCollections.updateOne(
+          { _id: ObjectId(artifactId) },
+          { $inc: { likeCount: -1 } }
+        );
+        return res.send({ liked: false, message: "Unliked" });
+      } else {
+        // Like: Add like and increment likeCount
+        await likeCollections.insertOne({ artifactId, userEmail });
+        await artifactCollections.updateOne(
+          { _id: ObjectId(artifactId) },
+          { $inc: { likeCount: 1 } }
+        );
+        return res.send({ liked: true, message: "Liked" });
+      }
     });
 
     // Send a ping to confirm a successful connection
@@ -50,5 +78,5 @@ async function run() {
 run().catch(console.dir);
 
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
-})
+  console.log(`Example app listening on port ${port}`);
+});
