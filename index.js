@@ -35,6 +35,7 @@ async function run() {
 
     app.post("/artifacts", async (req, res) => {
       const artifact = req.body;
+      artifact.likeCount = Number(artifact.likeCount) || 0;
       const result = await artifactCollections.insertOne(artifact);
       res.send(result);
     });
@@ -59,25 +60,31 @@ async function run() {
       res.json(artifacts);
     });
 
+    app.get("/my-artifacts", async (req, res) => {
+      const { email } = req.query;
+      if (!email) {
+        return res
+          .status(400)
+          .json({ message: "Email query parameter is required" });
+      }
+      const artifacts = await artifactCollections.find({userEmail: email }).toArray();
+      res.json(artifacts);
+    });
+
     app.post("/artifact/like", async (req, res) => {
       const { artifactId, userEmail } = req.body;
-
-      // Convert artifactId to ObjectId
       let artifactObjectId;
       try {
         artifactObjectId = new ObjectId(artifactId);
       } catch (err) {
         return res.status(400).json({ message: "Invalid artifactId" });
       }
-
-      // Check if like exists
       const existingLike = await likeCollections.findOne({
         artifactId,
         userEmail,
       });
 
       if (existingLike) {
-        // Unlike: Remove like and decrement likeCount
         await likeCollections.deleteOne({ artifactId, userEmail });
         await artifactCollections.updateOne(
           { _id: artifactObjectId },
@@ -85,7 +92,6 @@ async function run() {
         );
         return res.send({ liked: false, message: "Unliked" });
       } else {
-        // Like: Add like and increment likeCount
         await likeCollections.insertOne({ artifactId, userEmail });
         await artifactCollections.updateOne(
           { _id: artifactObjectId },
