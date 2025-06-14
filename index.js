@@ -3,12 +3,19 @@ const app = express();
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
-
+const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
 const port = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: ["http://localhost:5173"],
+    credentials: true,
+  })
+);
 app.use(express.json());
+app.use(cookieParser());
 
 // Mongo connection
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.jzcyg6t.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -16,14 +23,34 @@ const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@clu
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
-    strict: true,
+    strict: false,
     deprecationErrors: true,
   },
 });
 
-app.get("/", (req, res) => {
-  res.send("Hello World!");
-});
+const verifyToken = (req, res, next) => {
+  const token = req?.cookies?.token;
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized" });
+  }
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      res.clearCookie("token");
+      return res.status(401).send({ message: "Unauthorized or token expired" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+};
+
+const matchEmail = (req, res, next) => {
+  const tokenEmail = req.decoded?.email;
+  const email = req.body.email || req.query.email || req.params.email;
+  if (tokenEmail !== email) {
+    return res.status(403).send({ message: "Forbidden: Email mismatch" });
+  }
+  next();
+};
 
 async function run() {
   try {
@@ -33,14 +60,29 @@ async function run() {
     const artifactCollections = client.db("artifacts").collection("artifacts");
     const likeCollections = client.db("artifacts").collection("likes");
 
-    app.post("/artifacts", async (req, res) => {
+    // Create text index if not exists
+    // await artifactCollections.createIndex({ artifactName: "text" });
+    app.post("/jwt-token", async (req, res) => {
+      const { email } = req.body;
+      const user = { email };
+      const token = jwt.sign(user, process.env.JWT_SECRET, {
+        expiresIn: "1h",
+      });
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: false,
+      });
+      res.send({ token });
+    });
+
+    app.post("/artifacts", verifyToken, async (req, res) => {
       const artifact = req.body;
       artifact.likeCount = Number(artifact.likeCount) || 0;
       const result = await artifactCollections.insertOne(artifact);
       res.send(result);
     });
 
-    app.get("/artifact/:id", async (req, res) => {
+    app.get("/artifact/:id", verifyToken, async (req, res) => {
       const { id } = req.params;
       try {
         const artifact = await artifactCollections.findOne({
@@ -55,31 +97,46 @@ async function run() {
       }
     });
 
-    // ALL ARTIFACTS
     app.get("/all-artifacts", async (req, res) => {
-      const { search } = req.query;
+      const { search, limit } = req.query;
       let filter = {};
       let sort = { likeCount: -1 };
       let projection = {};
 
-      if (search) {
-        filter = { $text: { $search: search } };
-        projection = { score: { $meta: "textScore" } };
-        sort = { score: { $meta: "textScore" }, likeCount: -1 };
+      if (search && search.length > 0) {
+        // Use $text if you want full-text search (for whole words)
+        // Otherwise, use regex for partial matches
+        if (search.length > 2) {
+          filter = { $text: { $search: search } };
+          projection = { score: { $meta: "textScore" } };
+          sort = { score: { $meta: "textScore" }, likeCount: -1 };
+        } else {
+          filter = {
+            $or: [{ artifactName: { $regex: search, $options: "i" } }],
+          };
+          // Do NOT include score in projection or sort for regex
+          projection = {};
+          sort = { likeCount: -1 };
+        }
       }
 
-      const artifacts = await artifactCollections
+      let cursor = artifactCollections
         .find(filter)
         .project(projection)
-        .sort(sort)
-        .toArray();
+        .sort(sort);
 
+      if (limit) {
+        cursor = cursor.limit(Number(limit));
+      }
+
+      const artifacts = await cursor.toArray();
       res.send(artifacts);
     });
 
     // MY ARTIFACTS
-    app.get("/my-artifacts", async (req, res) => {
-      const { email, search } = req.query;
+    app.get("/my-artifacts", verifyToken, matchEmail, async (req, res) => {
+      console.log(req.cookies.token);
+      const { email, search, limit } = req.query;
       if (!email) {
         return res
           .status(400)
@@ -90,24 +147,34 @@ async function run() {
       let sort = { likeCount: -1 };
       let projection = {};
 
-      if (search) {
-        filter.$text = { $search: search };
-        projection = { score: { $meta: "textScore" } };
-        sort = { score: { $meta: "textScore" }, likeCount: -1 };
+      if (search && search.length > 0) {
+        if (search.length > 2) {
+          filter.$text = { $search: search };
+          projection = { score: { $meta: "textScore" } };
+          sort = { score: { $meta: "textScore" }, likeCount: -1 };
+        } else {
+          filter.$or = [{ artifactName: { $regex: search, $options: "i" } }];
+          projection = {};
+          sort = { likeCount: -1 };
+        }
       }
 
-      const artifacts = await artifactCollections
+      let cursor = artifactCollections
         .find(filter)
         .project(projection)
-        .sort(sort)
-        .toArray();
+        .sort(sort);
 
+      if (limit) {
+        cursor = cursor.limit(Number(limit));
+      }
+
+      const artifacts = await cursor.toArray();
       res.send(artifacts);
     });
 
     // LIKED ARTIFACTS
-    app.get("/liked-artifacts", async (req, res) => {
-      const { email, search } = req.query;
+    app.get("/liked-artifacts", verifyToken, matchEmail, async (req, res) => {
+      const { email, search, limit } = req.query;
       if (!email) {
         return res
           .status(400)
@@ -122,22 +189,32 @@ async function run() {
       let sort = { likeCount: -1 };
       let projection = {};
 
-      if (search) {
-        filter.$text = { $search: search };
-        projection = { score: { $meta: "textScore" } };
-        sort = { score: { $meta: "textScore" }, likeCount: -1 };
+      if (search && search.length > 0) {
+        if (search.length > 2) {
+          filter.$text = { $search: search };
+          projection = { score: { $meta: "textScore" } };
+          sort = { score: { $meta: "textScore" }, likeCount: -1 };
+        } else {
+          filter.$or = [{ artifactName: { $regex: search, $options: "i" } }];
+          projection = {};
+          sort = { likeCount: -1 };
+        }
       }
 
-      const artifacts = await artifactCollections
+      let cursor = artifactCollections
         .find(filter)
         .project(projection)
-        .sort(sort)
-        .toArray();
+        .sort(sort);
 
+      if (limit) {
+        cursor = cursor.limit(Number(limit));
+      }
+
+      const artifacts = await cursor.toArray();
       res.json(artifacts);
     });
 
-    app.post("/artifact/like", async (req, res) => {
+    app.post("/artifact/like", verifyToken, async (req, res) => {
       const { artifactId, userEmail } = req.body;
       let artifactObjectId;
       try {
@@ -168,7 +245,7 @@ async function run() {
     });
 
     // Update artifact by ID
-    app.put("/artifact/:id", async (req, res) => {
+    app.put("/artifact/:id", verifyToken, matchEmail, async (req, res) => {
       const { id } = req.params;
       const updateData = req.body;
       try {
@@ -186,7 +263,7 @@ async function run() {
     });
 
     // Delete artifact by ID
-    app.delete("/artifact/:id", async (req, res) => {
+    app.delete("/artifact/:id", verifyToken, matchEmail, async (req, res) => {
       const { id } = req.params;
       try {
         const result = await artifactCollections.deleteOne({
@@ -199,6 +276,11 @@ async function run() {
       } catch (error) {
         res.status(400).json({ message: "Invalid artifact ID" });
       }
+    });
+
+    app.post("/logout", (req, res) => {
+      res.clearCookie("token");
+      res.send({ message: "Logged out" });
     });
 
     // Send a ping to confirm a successful connection
