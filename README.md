@@ -1,12 +1,28 @@
-This a backend for a artifact management system.
-It is built using nodejs and express.
-For database use MongoDB.
-It is designed to handle the storage, retrieval, and management of artifacts in a structured manner.
+# 🏺 Artifact Management System Backend
 
-Package used here 
-** Express **
-** MongoDB **
-** dotenv **
-** cors **
+A backend API for managing artifacts, built with **Node.js**, **Express**, and **MongoDB**.
 
+---
+
+## 🚀 Features
+
+- JWT-based authentication & authorization
+- CRUD operations for artifacts
+- Like/unlike functionality per user
+- Full-text and partial search support
+- Secure routes with token & email matching
+- Cookie-based session management
+
+---
+
+## 🛠️ Tech Stack
+
+- **Express**
+- **MongoDB**
+- **dotenv**
+- **cors**
+- **cookie-parser**
+- **jsonwebtoken**
+
+---
 Live link : 

@@ -31,26 +31,40 @@ const client = new MongoClient(uri, {
 const verifyToken = (req, res, next) => {
   const token = req?.cookies?.token;
   if (!token) {
-    return res.status(401).send({ message: "Unauthorized" });
+    return res.status(401).send({ message: "Unauthorized: No token" });
   }
+
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) {
-      res.clearCookie("token");
+    if (err || !decoded) {
+      console.error("JWT verification error:", err);
       return res.status(401).send({ message: "Unauthorized or token expired" });
     }
+
     req.decoded = decoded;
     next();
   });
 };
 
+
 const matchEmail = (req, res, next) => {
-  const tokenEmail = req.decoded?.email;
-  const email = req.body.email || req.query.email || req.params.email;
+  const tokenEmail = req?.decoded?.email;
+  const email = req.body?.email || req.query?.email || req.params?.email;
+
+  if (!tokenEmail) {
+    return res.status(401).send({ message: "Unauthorized: Missing token email" });
+  }
+
+  if (!email) {
+    return res.status(400).send({ message: "Missing email in request" });
+  }
+
   if (tokenEmail !== email) {
     return res.status(403).send({ message: "Forbidden: Email mismatch" });
   }
+
   next();
 };
+
 
 async function run() {
   try {
@@ -71,6 +85,8 @@ async function run() {
       res.cookie("token", token, {
         httpOnly: true,
         secure: false,
+        sameSite: "lax",
+        path: "/",
       });
       res.send({ token });
     });
@@ -133,9 +149,7 @@ async function run() {
       res.send(artifacts);
     });
 
-    // MY ARTIFACTS
     app.get("/my-artifacts", verifyToken, matchEmail, async (req, res) => {
-      console.log(req.cookies.token);
       const { email, search, limit } = req.query;
       if (!email) {
         return res
@@ -172,7 +186,6 @@ async function run() {
       res.send(artifacts);
     });
 
-    // LIKED ARTIFACTS
     app.get("/liked-artifacts", verifyToken, matchEmail, async (req, res) => {
       const { email, search, limit } = req.query;
       if (!email) {
@@ -244,7 +257,6 @@ async function run() {
       }
     });
 
-    // Update artifact by ID
     app.put("/artifact/:id", verifyToken, matchEmail, async (req, res) => {
       const { id } = req.params;
       const updateData = req.body;
@@ -262,7 +274,6 @@ async function run() {
       }
     });
 
-    // Delete artifact by ID
     app.delete("/artifact/:id", verifyToken, matchEmail, async (req, res) => {
       const { id } = req.params;
       try {
@@ -279,7 +290,12 @@ async function run() {
     });
 
     app.post("/logout", (req, res) => {
-      res.clearCookie("token");
+      res.clearCookie("token", {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        path: "/",
+      });
       res.send({ message: "Logged out" });
     });
 
