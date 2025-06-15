@@ -10,7 +10,7 @@ const port = process.env.PORT || 3000;
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5174", "https://react-auth-35410.web.app"],
     credentials: true,
   })
 );
@@ -45,13 +45,14 @@ const verifyToken = (req, res, next) => {
   });
 };
 
-
 const matchEmail = (req, res, next) => {
   const tokenEmail = req?.decoded?.email;
   const email = req.body?.email || req.query?.email || req.params?.email;
 
   if (!tokenEmail) {
-    return res.status(401).send({ message: "Unauthorized: Missing token email" });
+    return res
+      .status(401)
+      .send({ message: "Unauthorized: Missing token email" });
   }
 
   if (!email) {
@@ -65,11 +66,10 @@ const matchEmail = (req, res, next) => {
   next();
 };
 
-
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const artifactCollections = client.db("artifacts").collection("artifacts");
     const likeCollections = client.db("artifacts").collection("likes");
@@ -82,13 +82,14 @@ async function run() {
       const token = jwt.sign(user, process.env.JWT_SECRET, {
         expiresIn: "1h",
       });
-      res.cookie("token", token, {
-        httpOnly: true,
-        secure: false,
-        sameSite: "lax",
-        path: "/",
-      });
-      res.send({ token });
+      res
+        .cookie('token', token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+          path: '/',
+        })
+        .send({ success: true })
     });
 
     app.post("/artifacts", verifyToken, async (req, res) => {
@@ -290,13 +291,14 @@ async function run() {
     });
 
     app.post("/logout", (req, res) => {
-      res.clearCookie("token", {
-        httpOnly: true,
-        secure: false,
-        sameSite: "lax",
-        path: "/",
-      });
-      res.send({ message: "Logged out" });
+      res.clearCookie('token', {
+          secure: process.env.NODE_ENV === 'production', // HTTPS in production
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict', // Cross-site in production
+          httpOnly: true,
+          path: '/', // Match the path where the cookie was set
+        })
+
+        res.status(200).send({ success: true })
     });
 
     // Send a ping to confirm a successful connection

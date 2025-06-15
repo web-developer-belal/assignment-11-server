@@ -25,4 +25,4 @@ A backend API for managing artifacts, built with **Node.js**, **Express**, and *
 - **jsonwebtoken**
 
 ---
-Live link : 
+Live link : https://artifact-backend-9qgy6ap5o-belals-projects-d85f171a.vercel.app/
